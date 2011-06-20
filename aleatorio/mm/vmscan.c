@@ -4,7 +4,7 @@
  *  Copyright (C) 1991, 1992, 1993, 1994  Linus Torvalds
  *
  *  Swap reorganised 29.12.95, Stephen Tweedie.
- *  kswapd added: 7.1.96  sct
+ *  kswapdkswapd added: 7.1.96  sct
  *  Removed kswapd_ctl limits, and swap out as many pages as needed
  *  to bring the system back to freepages.high: 2.4.97, Rik van Riel.
  *  Zone aware kswapd started 02/00, Kanoj Sarcar (kanoj@sgi.com).
@@ -1028,8 +1028,28 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 	unsigned long nr_lumpy_dirty = 0;
 	unsigned long nr_lumpy_failed = 0;
 	unsigned long scan;
+	/* cass */
+	struct list_head* isolated_pages[nr_to_scan];
+	struct list_head* it = src;
+	isolated_pages[0] = NULL;
+	for (scan = 0; scan < nr_to_scan && !list_is_last(it, src); scan++) {
+		isolated_pages[scan] = it;
+		it = it->next;
+	}
+	while (!list_is_last(it, src)) {
+		unsigned long pos;
+
+		pos = random32() % (++scan);
+		if(pos < nr_to_scan) {
+			isolated_pages[pos] = it;
+		}
+		it = it->next;
+	}
 
 	for (scan = 0; scan < nr_to_scan && !list_empty(src); scan++) {
+		src = isolated_pages[scan];
+	/* cass -- linha de baixo é a original */
+//	for (scan = 0; scan < nr_to_scan && !list_empty(src); scan++) {
 		struct page *page;
 		unsigned long pfn;
 		unsigned long end_pfn;
@@ -1552,10 +1572,8 @@ static void shrink_active_list(unsigned long nr_pages, struct zone *zone,
 			continue;
 		}
 
-		/* INICIO MODIFICACAO - 04 jun 2011 */
-		
-		//if (page_referenced(page, 0, sc->mem_cgroup, &vm_flags)) {
-		//	nr_rotated += hpage_nr_pages(page);
+		if (page_referenced(page, 0, sc->mem_cgroup, &vm_flags)) {
+			nr_rotated += hpage_nr_pages(page);
 			/*
 			 * Identify referenced, file-backed active pages and
 			 * give them one more trip around the active list. So
@@ -1565,18 +1583,14 @@ static void shrink_active_list(unsigned long nr_pages, struct zone *zone,
 			 * IO, plus JVM can create lots of anon VM_EXEC pages,
 			 * so we ignore them here.
 			 */
-		//	if ((vm_flags & VM_EXEC) && page_is_file_cache(page)) {
-		//		list_add(&page->lru, &l_active);
-		//		continue;
-		//	}
-		//}
-
-		if (random32() & 0x00000001 == 1) {
-			ClearPageActive(page);	/* we are de-activating */
-			list_add(&page->lru, &l_inactive);
+			if ((vm_flags & VM_EXEC) && page_is_file_cache(page)) {
+				list_add(&page->lru, &l_active);
+				continue;
+			}
 		}
 
-		/* FIM MODIFICACAO - 04 jun 2011 */
+		ClearPageActive(page);	/* we are de-activating */
+		list_add(&page->lru, &l_inactive);
 	}
 
 	/*
